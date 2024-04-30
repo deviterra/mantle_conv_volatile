@@ -1,0 +1,198 @@
+# Import modules
+import os
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import rc
+import pickle
+import warnings
+warnings.filterwarnings('ignore')
+
+rc('font',**{'family':'serif','serif':['Times new roman']})
+rc('text', usetex=True)
+
+# Add path to vizLABconvect
+pathViz = '/home/shug6866/rift-o-mat/models/LABconvect/python'
+
+sys.path.append(pathViz)
+import vizLABconvect as vizB
+
+class SimStruct:
+  pass
+
+#Dictionary to store vrms data
+dict_vrms = {}
+dict_vrms_vert = {}
+dict_vrms_fluid = {}
+
+#Get grid spaces
+A0  = SimStruct() # Needed to load timestep 0
+sim_name = 'ref00_dry_no_DTbot'
+A0.input_path_dir = '../new_simulations/'+sim_name
+A0.dimensional = 1  # 0-nd, 1-dim
+A0.ncomp = 2       # chemical components
+
+istep0 = 0 
+fdir0 = A0.input_path_dir+'/'+'Timestep'+str(istep0)
+
+vizB.correct_path_load_data(fdir0+'/parameters.py')
+vizB.correct_path_load_data(fdir0+'/out_xPV_ts'+str(istep0)+'.py')
+
+A0.scal, A0.nd, A0.geoscal = vizB.parse_parameters_file('parameters',fdir0)
+
+A0.grid = vizB.parse_grid_info('out_xPV_ts'+str(istep0),fdir0)
+A0.dx = A0.grid.xc[1]-A0.grid.xc[0]
+A0.dz = A0.grid.zc[1]-A0.grid.zc[0]
+A0.nx = A0.grid.nx
+A0.nz = A0.grid.nz
+
+
+# ---------------------------------------
+# Main
+# ---------------------------------------
+A  = SimStruct() # Do print(A.__dict__) to see structure of A
+
+# Parameters
+A.dimensional = 1  # 0-nd, 1-dim
+A.ncomp = 3        # chemical components
+
+# Directories
+sim_list = ['ref00_dry_no_DTbot',]
+#sim_list = ['ref00_dry_no_DTbot','ref01_H2O_no_DTbot_LA30', 'sim01_H2O_LA30_DT50','sim02_CO2_DT0_LA30','sim02_CO2_DT50_LA30','sim03_EH_LA30_no_DTbot','sim03_EH_LA30_DT50','sim04_EC_DT0_LA30','sim04_EC_DT50_LA30','sim05_HAC_DT0_LA30','sim05_HAC_DT50_LA30',]
+for sim_name in sim_list:
+    A.input_path_dir = '../new_simulations/'+sim_name
+    A.output_path_dir = '../new_simulations/Figures/'
+
+    try:
+      os.mkdir(A.output_path_dir)
+    except OSError:
+      pass
+
+    def sortTimesteps(tdir):
+      return int(tdir[8:])
+
+    # get timesteps
+    tdir = os.listdir(A.input_path_dir)
+    if '.DS_Store' in tdir:
+      tdir.remove('.DS_Store')
+    if 'LABconvect_input.opts' in tdir:
+      tdir.remove('LABconvect_input.opts')
+    if 'submit_job.run' in tdir:
+      tdir.remove('submit_job.run')
+
+    # remove slurm output
+    tdir_check = list.copy(tdir)
+    for s in tdir_check:
+      if 'slurm' in s:
+        tdir.remove(s)
+
+    tdir_check = list.copy(tdir)
+    for s in tdir_check:
+      if '.out' in s:
+        tdir.remove(s)
+
+    # remove restart timesteps
+    tdir_check = list.copy(tdir)
+    for s in tdir_check:
+      if '_r' in s:
+        tdir.remove(s)
+    nt = len(tdir)
+
+    # sort list in increasing tstep
+    tdir.sort(key=sortTimesteps)
+
+    time_list_v0 = np.zeros(nt)
+    time_list = time_list_v0.astype(int)
+    for ii in range(0,nt):
+      time_list[ii] = int(tdir[ii][8:])
+
+      # Loop over timesteps
+    vrms = np.zeros((2,nt))
+    dim=A.dimensional
+
+    for ts,istep in enumerate(time_list):
+        fdir   = A.input_path_dir+'/'+'Timestep'+str(istep)
+
+        vizB.correct_path_load_data(fdir+'/parameters.py')
+        A.scal, A.nd, A.geoscal = vizB.parse_parameters_file('parameters',fdir)
+        A.lbl = vizB.create_labels()
+
+        # Correct path
+        vizB.correct_path_load_data(fdir+'/out_xPV_ts'+str(istep)+'.py')
+        #vizB.correct_path_load_data(fdir+'/out_resPV_ts'+str(istep)+'.py')
+        #vizB.correct_path_load_data(fdir+'/out_xPVcoeff_ts'+str(istep)+'.py')
+        vizB.correct_path_load_data(fdir+'/out_xVel_ts'+str(istep)+'.py')
+        #vizB.correct_path_load_data(fdir+'/out_xHC_ts'+str(istep)+'.py')
+        #vizB.correct_path_load_data(fdir+'/out_resHC_ts'+str(istep)+'.py')
+        #vizB.correct_path_load_data(fdir+'/out_xHCcoeff_ts'+str(istep)+'.py')
+        #vizB.correct_path_load_data(fdir+'/out_xEnth_ts'+str(istep)+'.py')
+        #vizB.correct_path_load_data(fdir+'/out_matProp_ts'+str(istep)+'.py')
+
+        # Get grid data
+
+        # Resolution of plots
+        istart = 0
+        iend   = A0.nx
+        jstart = 0
+        jend   = A0.nz
+
+        # Get time data
+        A.nd.istep, A.nd.dt, A.nd.t = vizB.parse_time_info_parameters_file('parameters',fdir)
+
+        # Load data
+        A.P, A.Pc, A.Vsx, A.Vsz = vizB.parse_PV3_file('out_xPV_ts'+str(istep),fdir)
+        # A.resP, A.resPc, A.resVsx, A.resVsz = vizB.parse_PV3_file('out_resPV_ts'+str(istep),fdir)
+        # A.PV_coeff = vizB.parse_PVcoeff3_file('out_xPVcoeff_ts'+str(istep),fdir)
+        A.Vfx, A.Vfz, A.Vx, A.Vz = vizB.parse_Vel_file('out_xVel_ts'+str(istep),fdir)
+        # A.H, A.C0, A.C1, A.C2, A.C3 = vizB.parse_HC_MultiComp_file('out_xHC_ts'+str(istep),fdir,A.ncomp)
+        # A.resH, A.resC0, A.resC1, A.resC2, A.resC3 = vizB.parse_HC_MultiComp_file('out_resHC_ts'+str(istep),fdir,A.ncomp)
+        # A.HC_coeff = vizB.parse_HCcoeff_file('out_xHCcoeff_ts'+str(istep),fdir)
+        # A.Enth = vizB.parse_Enth_MultiComp_file('out_xEnth_ts'+str(istep),fdir,A.ncomp)
+        # A.matProp = vizB.parse_matProps_file('out_matProp_ts'+str(istep),fdir)
+
+        A.Vscx, A.Vscz = vizB.calc_center_velocities(A.Vsx,A.Vsz,A0.nx,A0.nz)
+        A.Vfcx, A.Vfcz = vizB.calc_center_velocities(A.Vfx,A.Vfz,A0.nx,A0.nz)
+        A.Vcx, A.Vcz   = vizB.calc_center_velocities(A.Vx,A.Vz,A0.nx,A0.nz)
+        # A.divmass = vizB.calc_divergence(A.Vx,A.Vz,A.dx,A.dz,A.nx,A.nz)
+
+        # Calclulating the vrms--for center 
+        scalv = vizB.get_scaling(A,'v',dim,1)
+        scalt = vizB.get_scaling(A,'t',dim,1)
+        t = A.nd.t*scalt
+        vrms[0,ts] = t
+        vrms[1,ts] = (sum(sum((A.Vcx[jstart:jend, istart:iend]*scalv)**2+(A.Vcz[jstart:jend, istart:iend]*scalv)**2))/iend/jend)**(1/2)
+
+    dict_vrms[sim_name]=vrms
+
+
+%matplotlib inline
+
+fig=plt.figure()
+sim_list = ['ref00_dry_no_DTbot','ref01_H2O_no_DTbot_LA30', 'sim01_H2O_LA30_DT50','sim02_CO2_DT0_LA30','sim02_CO2_DT50_LA30','sim03_EH_LA30_no_DTbot',
+            'sim03_EH_LA30_DT50','sim04_EC_DT0_LA30','sim04_EC_DT50_LA30',]
+ref_cases = ['ref00_dry_no_DTbot','ref01_H2O_no_DTbot_LA30','sim02_CO2_DT0_LA30',]
+DTbot_cases = ['sim01_H2O_LA30_DT50','sim02_CO2_DT50_LA30',]
+e_cases = ['sim03_EH_LA30_no_DTbot','sim04_EC_DT0_LA30',]
+e_t_cases = ['sim03_EH_LA30_DT50','sim04_EC_DT50_LA30',]
+
+legend = []
+for sim in ref_cases:      
+    plt.plot(dict_vrms[sim][0],dict_vrms[sim][1])
+plt.xlabel('Time [yr]')
+plt.ylabel('Vrms '+r'[cm/yr]')
+plt.legend(['dry mantle','100ppm H2O','60ppm CO2'])
+plt.title('Reference cases')
+# plt.savefig(A.output_path_dir+'Domain_averaged_temperature'+sim_name+'.png')
+
+
+fig = plt.figure()
+
+for sim in ref_cases:
+    plt.plot(dict_vrms[sim][0],dict_vrms[sim][1],'-',linewidth = 0.5, alpha = 0.8)
+    
+plt.plot(dict_vrms['sim03_EH_LA30_no_DTbot'][0],dict_vrms['sim03_EH_LA30_no_DTbot'][1],'-',label ='200ppm H2O')
+plt.plot(dict_vrms['sim04_EC_DT0_LA30'][0],dict_vrms['sim04_EC_DT0_LA30'][1],'-',label = '200ppm CO2')
+plt.xlabel('Time [yr]')
+plt.ylabel('Vrms '+r'[cm/yr]')
+plt.legend()
+plt.title('Enriched cases')
