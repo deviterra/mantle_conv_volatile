@@ -1,0 +1,186 @@
+# Import modules
+import os
+import sys
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib import rc
+import pickle
+import warnings
+warnings.filterwarnings('ignore')
+
+rc('font',**{'family':'serif','serif':['Times new roman']})
+rc('text', usetex=True)
+
+# Add path to vizLABconvect
+pathViz = '/home/shug6866/rift-o-mat/models/LABconvect/python'
+sys.path.append(pathViz)
+import vizLABconvect as vizB
+
+class SimStruct:
+  pass
+
+# ---------------------------------------
+# Main
+# ---------------------------------------
+A  = SimStruct() # Do print(A.__dict__) to see structure of A
+A0  = SimStruct() # Needed to load timestep 0
+
+# Parameters
+A.dimensional = 1  # 0-nd, 1-dim
+A.ncomp = 3      # chemical components
+
+A.initial_bulk_H2Oppm = 0
+A.initial_bulk_CO2ppm = 60
+
+# Directories
+sim_name = 'sim02_CO2_DT50_LA30'
+A.input_path_dir = '../new_simulations/'+sim_name
+A.output_path_dir = '../new_simulations/Figures/'+sim_name+'_Mg_num/'
+# A.output_path_dir_vol = '../Figures/'+sim_name+'_zoomed_volatiles/'
+# A.output_path_dir = '../Figures/'+sim_name+'_Enth/'
+
+try:
+  os.mkdir(A.output_path_dir)
+except OSError:
+  pass
+
+def sortTimesteps(tdir):
+  return int(tdir[8:])
+
+# get timesteps
+tdir = os.listdir(A.input_path_dir)
+if '.DS_Store' in tdir:
+  tdir.remove('.DS_Store')
+if 'LABconvect_input.opts' in tdir:
+  tdir.remove('LABconvect_input.opts')
+if 'submit_job.run' in tdir:
+  tdir.remove('submit_job.run')
+
+# remove slurm output
+tdir_check = list.copy(tdir)
+for s in tdir_check:
+  if 'slurm' in s:
+    tdir.remove(s)
+
+tdir_check = list.copy(tdir)
+for s in tdir_check:
+  if '.out' in s:
+    tdir.remove(s)
+    
+# remove restart timesteps
+tdir_check = list.copy(tdir)
+for s in tdir_check:
+  if '_r' in s:
+    tdir.remove(s)
+nt = len(tdir)
+
+# sort list in increasing tstep
+tdir.sort(key=sortTimesteps)
+
+time_list_v0 = np.zeros(nt)
+time_list = time_list_v0.astype(int)
+for ii in range(0,nt):
+  time_list[ii] = int(tdir[ii][8:])
+
+# check if time_list == number of output files
+fout_list = os.listdir(A.output_path_dir)
+if '.DS_Store' in fout_list:
+  fout_list.remove('.DS_Store')
+nout = len(fout_list)
+
+'''
+flg_output = True
+if (nt==nout):
+  flg_output = True
+  #flg_output = False
+
+if (flg_output):
+  print('  >> '+A.output_path_dir+'  >> TRUE')
+
+  # Load first timestep
+    # if (istep==0):
+  istep = 0
+  fdir   = A.input_path_dir+'/'+'Timestep'+str(istep)
+  vizB.correct_path_load_data(fdir+'/out_xEnth_HS_ts'+str(istep)+'.py')
+  A.Enth = vizB.parse_Enth_MultiComp_file('out_xEnth_HS_ts'+str(istep),fdir,A.ncomp)
+  A.T_HS = A.Enth.T
+#      vizB.plot_Enth_MultiComp(A,istart,iend,jstart,jend,A.output_path_dir+'out_xEnth_HS_ts'+str(istep),istep,A.dimensional)
+#      vizB.plot_Enth_MultiComp(A,istart,iend,jstart,jend,A.output_path_dir+'out_xEnth_HS_ts'+str(istep),istep,A.dimensional)
+'''
+#Mannually set time list
+#time_list = range(29501,30502,1000)
+
+Mg_num = np.zeros((5,len(time_list)))
+
+  # Loop over timesteps
+for ts,istep in enumerate(time_list):
+ # Loop over timesteps
+    fdir   = A.input_path_dir+'/'+'Timestep'+str(istep)
+    
+    vizB.correct_path_load_data(fdir+'/parameters.py')
+    A.scal, A.nd, A.geoscal = vizB.parse_parameters_file('parameters',fdir)
+    A.lbl = vizB.create_labels()
+
+    # Correct path
+    vizB.correct_path_load_data(fdir+'/out_xPV_ts'+str(istep)+'.py')
+    vizB.correct_path_load_data(fdir+'/out_resPV_ts'+str(istep)+'.py')
+    vizB.correct_path_load_data(fdir+'/out_xPVcoeff_ts'+str(istep)+'.py')
+    vizB.correct_path_load_data(fdir+'/out_xVel_ts'+str(istep)+'.py')
+    vizB.correct_path_load_data(fdir+'/out_xHC_ts'+str(istep)+'.py')
+    vizB.correct_path_load_data(fdir+'/out_resHC_ts'+str(istep)+'.py')
+    vizB.correct_path_load_data(fdir+'/out_xHCcoeff_ts'+str(istep)+'.py')
+    vizB.correct_path_load_data(fdir+'/out_xEnth_ts'+str(istep)+'.py')
+    vizB.correct_path_load_data(fdir+'/out_matProp_ts'+str(istep)+'.py')
+
+    # Get grid data
+    A.grid = vizB.parse_grid_info('out_xPV_ts'+str(istep),fdir)
+    A.dx = A.grid.xc[1]-A.grid.xc[0]
+    A.dz = A.grid.zc[1]-A.grid.zc[0]
+    A.nx = A.grid.nx
+    A.nz = A.grid.nz
+
+    # Resolution of plots
+    istart = 0
+    iend   = A.nx
+    jstart = 0
+    jend   = A.nz
+
+    # Get time data
+    A.nd.istep, A.nd.dt, A.nd.t = vizB.parse_time_info_parameters_file('parameters',fdir)
+
+    # Load data
+    #A.P, A.Pc, A.Vsx, A.Vsz = vizB.parse_PV3_file('out_xPV_ts'+str(istep),fdir)
+    #A.resP, A.resPc, A.resVsx, A.resVsz = vizB.parse_PV3_file('out_resPV_ts'+str(istep),fdir)
+    #A.PV_coeff = vizB.parse_PVcoeff3_file('out_xPVcoeff_ts'+str(istep),fdir)
+    #A.Vfx, A.Vfz, A.Vx, A.Vz = vizB.parse_Vel_file('out_xVel_ts'+str(istep),fdir)
+    A.H, A.C0, A.C1, A.C2, A.C3 = vizB.parse_HC_MultiComp_file('out_xHC_ts'+str(istep),fdir,A.ncomp)
+    A.resH, A.resC0, A.resC1, A.resC2, A.resC3 = vizB.parse_HC_MultiComp_file('out_resHC_ts'+str(istep),fdir,A.ncomp)
+    #A.HC_coeff = vizB.parse_HCcoeff_file('out_xHCcoeff_ts'+str(istep),fdir)
+    A.Enth = vizB.parse_Enth_MultiComp_file('out_xEnth_ts'+str(istep),fdir,A.ncomp)
+    #A.matProp = vizB.parse_matProps_file('out_matProp_ts'+str(istep),fdir)
+    '''
+    A.Vscx, A.Vscz = vizB.calc_center_velocities(A.Vsx,A.Vsz,A.nx,A.nz)
+    A.Vfcx, A.Vfcz = vizB.calc_center_velocities(A.Vfx,A.Vfz,A.nx,A.nz)
+    A.Vcx, A.Vcz   = vizB.calc_center_velocities(A.Vx,A.Vz,A.nx,A.nz)
+    A.divmass = vizB.calc_divergence(A.Vx,A.Vz,A.dx,A.dz,A.nx,A.nz)
+    '''
+
+    #Manual calculation of Mg number for the bulk
+    A.Mg = 0.94*A.C0+0.64*A.C1
+    
+    #Mg num for liquid?
+    A.Mg_f = 0.94*A.Enth.Cf0 + 0.64*A.Enth.Cf1
+    
+    Mg_num[1,ts] = A.Mg.max()
+    Mg_num[2,ts] = A.Mg.min()
+    Mg_num[3,ts] = A.Mg_f.max()
+    Mg_num[4,ts] = A.Mg_f.min()
+    
+    #get time
+    dim = A.dimensional
+    scalt = vizB.get_scaling(A,'t',dim,1)
+    t = A.nd.t*scalt
+    Mg_num[0,ts] = t
+    
+Mg_dict[sim_name] = {'time':Mg_num[0],'bulk_max':Mg_num[1],'bulk_min':Mg_num[2],'f_max':Mg_num[3],'f_min':Mg_num[4]}
