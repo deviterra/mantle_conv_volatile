@@ -1,0 +1,272 @@
+# Import modules
+import os
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import rc
+import pickle
+import warnings
+warnings.filterwarnings('ignore')
+
+rc('font',**{'family':'serif','serif':['Times new roman']})
+rc('text', usetex=True)
+
+# Add path to vizLABconvect
+pathViz = '/home/shug6866/rift-o-mat/models/LABconvect/python'
+
+sys.path.append(pathViz)
+import vizLABconvect as vizB
+
+class SimStruct:
+  pass
+
+
+# ---------------------------------------
+# Main
+# ---------------------------------------
+A  = SimStruct() # Do print(A.__dict__) to see structure of A
+A0  = SimStruct() # Needed to load timestep 0
+
+# Parameters
+A.dimensional = 1  # 0-nd, 1-dim
+A.ncomp = 3       # chemical components
+
+# Directories
+# sim_list = ['ref01_H2O_no_DTbot_LA30', 'sim01_H2O_LA30_DT50', 'sim02_CO2_DT50_LA30', 'sim02_CO2_DT0_LA30', 'sim03_EH_LA30_DT50', 'sim03_EH_LA30_no_DTbot', 'sim04_EC_DT50_LA30', 'sim04_EC_DT0_LA30''sim05_HAC_DT50_LA30', 'sim05_HAC_DT0_LA30', 'ref00_dry_no_DTbot']
+
+# sim_list =  ['sim03_EH_LA30_no_DTbot', 'sim04_EC_DT50_LA30', 'sim04_EC_DT0_LA30','sim05_HAC_DT50_LA30', 'sim05_HAC_DT0_LA30',]
+sim_list = ['sim04_EC_DT0_LA30', 'ref00_dry_no_DTbot']
+
+for sim_name in sim_list:
+    A.input_path_dir = '../new_simulations/'+sim_name
+    A.output_path_dir = '../new_simulations/Figures/'
+    
+    try:
+      os.mkdir(A.output_path_dir)
+    except OSError:
+      pass
+
+    def sortTimesteps(tdir):
+      return int(tdir[8:])
+
+    # get timesteps
+    tdir = os.listdir(A.input_path_dir)
+    if '.DS_Store' in tdir:
+      tdir.remove('.DS_Store')
+    if 'LABconvect_input.opts' in tdir:
+      tdir.remove('LABconvect_input.opts')
+    if 'submit_job.run' in tdir:
+      tdir.remove('submit_job.run')
+
+    # remove slurm output
+    tdir_check = list.copy(tdir)
+    for s in tdir_check:
+      if 'slurm' in s:
+        tdir.remove(s)
+
+    tdir_check = list.copy(tdir)
+    for s in tdir_check:
+      if '.out' in s:
+        tdir.remove(s)
+
+    # remove restart timesteps
+    tdir_check = list.copy(tdir)
+    for s in tdir_check:
+      if '_r' in s:
+        tdir.remove(s)
+    nt = len(tdir)
+
+    # sort list in increasing tstep
+    tdir.sort(key=sortTimesteps)
+
+    time_list_v0 = np.zeros(nt)
+    time_list = time_list_v0.astype(int)
+    for ii in range(0,nt):
+      time_list[ii] = int(tdir[ii][8:])
+
+      # Loop over timesteps
+    #row1: time, row2: total flux, row3: up and row4: down
+    flux = np.zeros((4,nt))
+    dim=A.dimensional
+
+    for ts,istep in enumerate(time_list):
+        print('>>> Timestep'+str(istep))
+        fdir   = A.input_path_dir+'/'+'Timestep'+str(istep)
+        vizB.correct_path_load_data(fdir+'/parameters.py')
+        A.scal, A.nd, A.geoscal = vizB.parse_parameters_file('parameters',fdir)
+        A.lbl = vizB.create_labels()
+
+        # Correct path
+        vizB.correct_path_load_data(fdir+'/out_xPV_ts'+str(istep)+'.py')
+        vizB.correct_path_load_data(fdir+'/out_resPV_ts'+str(istep)+'.py')
+        vizB.correct_path_load_data(fdir+'/out_xPVcoeff_ts'+str(istep)+'.py')
+        vizB.correct_path_load_data(fdir+'/out_xVel_ts'+str(istep)+'.py')
+        vizB.correct_path_load_data(fdir+'/out_xHC_ts'+str(istep)+'.py')
+        vizB.correct_path_load_data(fdir+'/out_resHC_ts'+str(istep)+'.py')
+        vizB.correct_path_load_data(fdir+'/out_xHCcoeff_ts'+str(istep)+'.py')
+        vizB.correct_path_load_data(fdir+'/out_xEnth_ts'+str(istep)+'.py')
+        vizB.correct_path_load_data(fdir+'/out_matProp_ts'+str(istep)+'.py')
+
+        # Get grid data
+        A.grid = vizB.parse_grid_info('out_xPV_ts'+str(istep),fdir)
+        A.dx = A.grid.xc[1]-A.grid.xc[0]
+        A.dz = A.grid.zc[1]-A.grid.zc[0]
+        A.nx = A.grid.nx
+        A.nz = A.grid.nz
+
+        # Resolution of plots
+        istart = 0
+        iend   = A.nx
+        jstart = 0
+        jend   = A.nz
+
+        # Get time data
+        A.nd.istep, A.nd.dt, A.nd.t = vizB.parse_time_info_parameters_file('parameters',fdir)
+        # Load data
+        A.P, A.Pc, A.Vsx, A.Vsz = vizB.parse_PV3_file('out_xPV_ts'+str(istep),fdir)
+        # A.resP, A.resPc, A.resVsx, A.resVsz = vizB.parse_PV3_file('out_resPV_ts'+str(istep),fdir)
+        # A.PV_coeff = vizB.parse_PVcoeff3_file('out_xPVcoeff_ts'+str(istep),fdir)
+        A.Vfx, A.Vfz, A.Vx, A.Vz = vizB.parse_Vel_file('out_xVel_ts'+str(istep),fdir)
+        A.H, A.C0, A.C1, A.C2, A.C3 = vizB.parse_HC_MultiComp_file('out_xHC_ts'+str(istep),fdir,A.ncomp)
+        # A.resH, A.resC0, A.resC1, A.resC2, A.resC3 = vizB.parse_HC_MultiComp_file('out_resHC_ts'+str(istep),fdir,A.ncomp)
+        # A.HC_coeff = vizB.parse_HCcoeff_file('out_xHCcoeff_ts'+str(istep),fdir)
+        A.Enth = vizB.parse_Enth_MultiComp_file('out_xEnth_ts'+str(istep),fdir,A.ncomp)
+        A.matProp = vizB.parse_matProps_file('out_matProp_ts'+str(istep),fdir)
+
+        A.Vscx, A.Vscz = vizB.calc_center_velocities(A.Vsx,A.Vsz,A.nx,A.nz)
+        A.Vfcx, A.Vfcz = vizB.calc_center_velocities(A.Vfx,A.Vfz,A.nx,A.nz)
+        # A.Vcx, A.Vcz   = vizB.calc_center_velocities(A.Vx,A.Vz,A.nx,A.nz)
+        # A.divmass = vizB.calc_divergence(A.Vx,A.Vz,A.dx,A.dz,A.nx,A.nz)
+        scalv = vizB.get_scaling(A,'v',dim,1)
+        #Calculate total flux
+        q_f = np.mean(np.mean(A.Enth.phi*A.matProp.rhof*A.Vfcz*scalv*A.C2))
+        q_s = np.mean(np.mean((1-A.Enth.phi)*A.matProp.rhos*A.Vscz*scalv*A.C2))
+        
+        #Calculate upward flux
+        idm_f = A.Vfcz>0
+        idm_s = A.Vscz>0
+        q_up = np.mean(np.mean(A.Enth.phi*A.matProp.rhof*A.Vfcz*scalv*A.Enth.Cf2*idm_f+(1-A.Enth.phi)*A.matProp.rhos*A.Vscz*scalv*A.Enth.Cs2*idm_s))
+
+        #calculate downard flux
+        idm_f = A.Vfcz<0
+        idm_s = A.Vscz<0
+        q_down = np.mean(np.mean(A.Enth.phi*A.matProp.rhof*A.Vfcz*scalv*A.Enth.Cf2*idm_f+(1-A.Enth.phi)*A.matProp.rhos*A.Vscz*scalv*A.Enth.Cs2*idm_s))
+
+        #get timedata
+        scalt = vizB.get_scaling(A,'t',dim,1)
+        t = A.nd.t*scalt
+        flux[0,ts] = t
+        flux[1,ts] = q_f+q_s
+        flux[2,ts] = q_up
+        flux[3,ts] = q_down
+        
+        # remove
+        os.system('rm -r '+A.input_path_dir+'/'+'Timestep'+str(istep)+'/__pycache__')
+        
+    print(">>> "+sim_name+"_finished")
+    pickle_out = open('pickle/'+sim_name+"_flux.pickle","wb")
+    pickle.dump(flux, pickle_out)
+    pickle_out.close()
+
+    %matplotlib inline
+
+
+sim_list = ['ref01_H2O_no_DTbot_LA30', 'sim01_H2O_LA30_DT50', 'sim02_CO2_DT50_LA30', 'sim02_CO2_DT0_LA30', 'sim03_EH_LA30_DT50', 'sim03_EH_LA30_no_DTbot', 'sim04_EC_DT50_LA30', 'sim04_EC_DT0_LA30','sim05_HAC_DT50_LA30', 'sim05_HAC_DT0_LA30', 'ref00_dry_no_DTbot']
+
+ref_cases = ['ref00_dry_no_DTbot','ref01_H2O_no_DTbot_LA30','sim02_CO2_DT0_LA30',]
+DTbot_cases = ['sim01_H2O_LA30_DT50','sim02_CO2_DT50_LA30',]
+e_cases = ['sim03_EH_LA30_no_DTbot','sim04_EC_DT0_LA30',]
+e_t_cases = ['sim03_EH_LA30_DT50','sim04_EC_DT50_LA30',]
+
+    
+fig = plt.figure()
+color_code = [u'#1f77b4', u'#ff7f0e', u'#2ca02c', u'#d62728', u'#9467bd', u'#8c564b', u'#e377c2', u'#7f7f7f', u'#bcbd22', u'#17becf']
+
+label = ['dry mantle','100ppm H2O','60ppm CO2']
+for i,sim in enumerate(ref_cases):
+    pickle_in = open('pickle/'+sim +"_flux.pickle","rb")
+    flux = pickle.load(pickle_in)
+
+    plt.plot(flux[0],flux[2],color_code[i],label = label[i])
+    plt.plot(flux[0],flux[3],color_code[i],linestyle = '-.')
+    plt.plot(flux[0],flux[1],color_code[i],linestyle = ':')
+    #plt.plot(flux[0],flux[3],'')
+    #plt.legend([sim+' Total flux',sim+' Upward flux',])
+plt.legend()
+plt.xlabel('Time [yrs]')
+plt.ylabel('Flux of volatiles averaged over domain [kg/(cm2 yr)]')
+
+
+plt.title('Reference cases')
+plt.close
+
+i = 3
+color_code = [u'#1f77b4', u'#ff7f0e', u'#2ca02c', u'#d62728', u'#9467bd', u'#8c564b', u'#e377c2', u'#7f7f7f', u'#bcbd22', u'#17becf']
+fig = plt.figure()
+sim = 'sim03_EH_LA30_no_DTbot'
+pickle_in = open('pickle/'+sim +"_flux.pickle","rb")
+flux = pickle.load(pickle_in)
+
+plt.plot(flux[0],flux[2],color_code[i], label = '200ppm H2O')
+plt.plot(flux[0],flux[3],color_code[i], linestyle = '-.')
+plt.plot(flux[0],flux[1],color_code[i], linestyle = ':')
+i +=1
+    #plt.plot(flux[0],flux[3],'')
+    
+sim = 'sim04_EC_DT0_LA30'
+pickle_in = open('pickle/'+sim +"_flux.pickle","rb")
+flux = pickle.load(pickle_in)
+plt.plot(flux[0],flux[2],color_code[i], label = '200ppm CO2')
+plt.plot(flux[0],flux[3],color_code[i], linestyle = '-.')
+plt.plot(flux[0],flux[1],color_code[i], linestyle = ':')
+plt.legend()
+plt.xlabel('Time [yrs]')
+plt.ylabel('Flux of volatiles averaged over domain [kg/(cm2 yr)]')
+
+plt.title('Enriched cases')
+
+plt.close
+
+label = ['100ppm H2O','60ppm CO2']
+i_c=1
+for i,sim in enumerate(DTbot_cases):
+    pickle_in = open('pickle/'+sim +"_flux.pickle","rb")
+    flux = pickle.load(pickle_in)
+
+    plt.plot(flux[0],flux[2],color_code[i_c],label = label[i])
+    plt.plot(flux[0],flux[3],color_code[i_c],linestyle = '-.')
+    plt.plot(flux[0],flux[1],color_code[i_c],linestyle = ':')
+    #plt.plot(flux[0],flux[3],'')
+    #plt.legend([sim+' Total flux',sim+' Upward flux',])
+    i_c+=1
+
+for i,sim in enumerate(ref_cases):
+    pickle_in = open('pickle/'+sim +"_flux.pickle","rb")
+    flux = pickle.load(pickle_in)
+
+    plt.plot(flux[0],flux[2],color_code[i],linewidth = 0.7)
+    plt.plot(flux[0],flux[3],color_code[i],linestyle = '-.',linewidth = 0.7)
+    plt.plot(flux[0],flux[1],color_code[i],linestyle = '-.',linewidth = 0.7)
+    #plt.plot(flux[0],flux[3],'')
+    #plt.legend([sim+' Total flux',sim+' Upward flux',])
+    
+plt.legend()
+plt.xlabel('Time [yrs]')
+plt.ylabel('Flux of volatiles averaged over domain [kg/(cm2 yr)]')
+plt.title('Bottom heating for reference cases')
+
+sim = 'sim04_EC_DT50_LA30'
+pickle_in = open('pickle/'+sim +"_flux.pickle","rb")
+flux = pickle.load(pickle_in)
+i_c =4
+plt.plot(flux[0],flux[2],color_code[i_c])
+plt.plot(flux[0],flux[3],color_code[i_c],linestyle = '-.')
+plt.plot(flux[0],flux[1],color_code[i_c],linestyle = ':')
+#plt.plot(flux[0],flux[3],'')
+#plt.legend([sim+' Total flux',sim+' Upward flux',])
+
+
+plt.legend()
+plt.xlabel('Time [yrs]')
+plt.ylabel('Flux of volatiles averaged over domain [kg/(cm2 yr)]')
+plt.title('Bottom heating for carbonated cases (DT=50, 200ppm CO2)')
